@@ -2524,6 +2524,17 @@ func (jsa *jsAccount) limitsExceeded(storeType StorageType, tierName string, rep
 }
 
 func (jsa *jsAccount) wouldExceedLimits(storeType StorageType, tierName string, replicas int, subj string, hdr, msg []byte) (bool, *ApiError) {
+	var size uint64
+	if storeType == MemoryStorage {
+		size = memStoreMsgSize(subj, hdr, msg)
+	} else {
+		size = fileStoreMsgSize(subj, hdr, msg)
+	}
+	return jsa.wouldExceedLimitsWithSize(storeType, tierName, replicas, size)
+}
+
+// wouldExceedLimitsWithSize checks whether storing size bytes per replica would exceed the account limits.
+func (jsa *jsAccount) wouldExceedLimitsWithSize(storeType StorageType, tierName string, replicas int, size uint64) (bool, *ApiError) {
 	jsa.usageMu.RLock()
 	defer jsa.usageMu.RUnlock()
 
@@ -2549,12 +2560,12 @@ func (jsa *jsAccount) wouldExceedLimits(storeType StorageType, tierName string, 
 
 	// Since tiers are flat we need to scale limit up by replicas when checking.
 	if storeType == MemoryStorage {
-		totalMem := inUse.total.mem + (int64(memStoreMsgSize(subj, hdr, msg)) * r)
+		totalMem := inUse.total.mem + (int64(size) * r)
 		if selectedLimits.MaxMemory >= 0 && totalMem > selectedLimits.MaxMemory*lr {
 			return true, nil
 		}
 	} else {
-		totalStore := inUse.total.store + (int64(fileStoreMsgSize(subj, hdr, msg)) * r)
+		totalStore := inUse.total.store + (int64(size) * r)
 		if selectedLimits.MaxStore >= 0 && totalStore > selectedLimits.MaxStore*lr {
 			return true, nil
 		}
